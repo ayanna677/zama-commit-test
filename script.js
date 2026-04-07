@@ -146,13 +146,9 @@ const SESSION = {
 };
 let scanHist = JSON.parse(localStorage.getItem('ts_h') || '[]');
 
-// API Keys
-// NewsData.io key is hardcoded — no UI button needed
-// ClaimBuster key: get free key at idir.uta.edu/claimbuster and paste below
-const API_KEYS = {
-  newsdata:    'pub_3d644b657a84487b945a7d9e07184556',
-  claimbuster: localStorage.getItem('ts_key_claimbuster') || '',
-};
+// No API keys required — all sources are free and open:
+// Wikipedia REST API, RSS feeds (NDTV/BBC/TOI/Reuters/Google News), local sentence analysis
+const API_KEYS = { newsdata: true, claimbuster: false }; // kept for compatibility only
 
 const EXAMPLES_TEXT = [
   'Watch: Trump completely loses it on Twitter after CNN calls him out for lying again (video)',
@@ -190,8 +186,8 @@ function checkKeyInput() {}
 function toggleApiConfig() {}
 
 function updateSourceBarKeyStatus() {
-  setSrc('newsdata', API_KEYS.newsdata ? 'ok' : 'fail', API_KEYS.newsdata ? 'READY' : 'NO KEY');
-  setSrc('claim',    API_KEYS.claimbuster ? 'ok' : 'fail', API_KEYS.claimbuster ? 'READY' : 'NO KEY');
+  setSrc('newsdata', 'ok', 'READY');
+  setSrc('claim',    'ok', 'READY');
 }
 
 // ══════════════════════════════════════════
@@ -202,9 +198,9 @@ function loadDataset() {
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(d => {
       dataset = d; isLoaded = true;
-      tick(`DATASET ONLINE — ${d.length} ENTRIES — WIKIPEDIA FREE — NEWSDATA.IO ${API_KEYS.newsdata ? 'READY' : 'NEEDS KEY'} — CLAIMBUSTER ${API_KEYS.claimbuster ? 'READY' : 'NEEDS KEY'}`);
+      tick(`DATASET ONLINE — ${d.length} ENTRIES — WIKIPEDIA FREE — LIVE NEWS RSS (NDTV·BBC·TOI·REUTERS) — SENTENCE ANALYSIS READY`);
     })
-    .catch(() => tick('DATASET OFFLINE — LIVE API MODE — SET API KEYS VIA ⚙ BUTTON FOR FULL POWER'));
+    .catch(() => tick('DATASET OFFLINE — LIVE API MODE — WIKIPEDIA + RSS NEWS (NDTV·BBC·TOI·REUTERS) + SENTENCE ANALYSIS ALL FREE'));
 }
 
 // ══════════════════════════════════════════
@@ -923,7 +919,7 @@ function displayResult(d) {
   if(vp)vp.className=`verdict-pulse ${v.cls}`;
   const vl=document.getElementById('verdictLabel');
   if(vl){vl.textContent=v.text;vl.className=`verdict-label ${v.cls}`;}
-  safeText('verdictSub',`Confidence: ${conf}% | Score: ${total.toFixed(2)} | Domain + Wikipedia + NewsData + ClaimBuster + Dataset`);
+  safeText('verdictSub',`Confidence: ${conf}% | Score: ${total.toFixed(2)} | Domain + Wikipedia + Live News RSS + Sentence Analysis + Dataset`);
   safeText('verdictScore',(total>=0?'+':'')+total.toFixed(1));
 
   const fp=Math.min(100,Math.max(0,Math.round(50+total*4.2)));
@@ -971,29 +967,26 @@ function displayResult(d) {
         </div>`).join('')
     :'<div class="wiki-none">⚠ No Wikipedia articles found for key topics in this text.</div>');
 
-  // NewsData.io results (only set if not already set by error handler)
+  // Live News RSS results
   if (!document.getElementById('newsdataResults').querySelector('.nokey-msg,.error-msg')) {
     safeHTML('newsdataResults', newsdataResult.articles.length
       ? newsdataResult.articles.slice(0,6).map((a,i)=>`
           <div class="newsdata-item" style="animation-delay:${i*.06}s">
-            <div class="nd-hed"><a href="${a.link||a.url||'#'}" target="_blank" rel="noopener">${a.title||'Article'}</a></div>
-            <div class="nd-meta">
-              ${a.source_id||a.domain||''} ${a.pubDate?'· '+a.pubDate.slice(0,10):''}
-              ${a.country?.length?'· '+a.country[0].toUpperCase():''}
-            </div>
-            ${a.description?`<div class="nd-desc">${a.description.slice(0,120)}...</div>`:''}
+            <div class="nd-hed"><a href="${a.link||'#'}" target="_blank" rel="noopener">${a.title||'Article'}</a></div>
+            <div class="nd-meta">${a.source||''} ${a.pubDate?'· '+a.pubDate.slice(0,16):''}</div>
+            ${a.desc?`<div class="nd-desc">${a.desc}</div>`:''}
           </div>`).join('')
-      : '<div class="newsdata-none">⚠ Zero articles found for this topic — story not in verified global news index.</div>');
+      : '<div class="newsdata-none">⚠ No matching articles found in NDTV, BBC, Reuters, TOI or Google News for this topic.</div>');
   }
 
-  // ClaimBuster (only set if not already set by error/nokey handler)
+  // Sentence Credibility Analysis results
   if (!document.getElementById('claimResults').querySelector('.nokey-msg,.error-msg')) {
     safeHTML('claimResults', claimResult.claims.length
       ? claimResult.claims.slice(0,5).map((c,i)=>{
           const pct=Math.round(c.claimScore*100);
-          const cls=pct>70?'hi':pct>40?'mid':'lo';
+          const cls=pct>65?'hi':pct>45?'mid':'lo';
           return `<div class="claim-item" style="animation-delay:${i*.06}s">
-            <div class="claim-pct-wrap"><div class="claim-pct-num ${cls}">${pct}%</div><div class="claim-pct-lbl">CHECK-W.</div></div>
+            <div class="claim-pct-wrap"><div class="claim-pct-num ${cls}">${pct}%</div><div class="claim-pct-lbl">SPECIFIC</div></div>
             <div class="claim-text">${c.sentence}</div>
           </div>`;
         }).join('')
@@ -1037,11 +1030,11 @@ function copyReport() {
     domainResult?`DOMAIN: ${domainResult.domain} — ${domainResult.rep.toUpperCase()} — ${domainResult.cat} — Bias: ${domainResult.bias}`:'',
     '','--- WIKIPEDIA ---',
     ...(wikiResult.results.length?wikiResult.results.map(r=>`• ${r.title}: ${r.extract.slice(0,120)}... ${r.url}`):['• No Wikipedia articles found']),
-    '','--- NEWSDATA.IO LIVE NEWS ---',
-    `${newsdataResult.articles.length} real news articles found`,
-    ...newsdataResult.articles.slice(0,4).map(a=>`• ${a.title||'Article'} — ${a.source_id||''} — ${a.link||a.url||''}`),
-    '','--- CLAIMBUSTER AI ---',
-    ...(claimResult.claims.length?claimResult.claims.slice(0,4).map(c=>`• ${Math.round(c.claimScore*100)}% check-worthy: "${c.sentence}"`):['• API key not set or unavailable']),
+    '','--- LIVE NEWS (NDTV · BBC · TOI · REUTERS) ---',
+    `${newsdataResult.articles.length} matching news articles found`,
+    ...newsdataResult.articles.slice(0,4).map(a=>`• ${a.title||'Article'} — ${a.source||''} — ${a.link||''}`),
+    '','--- SENTENCE CREDIBILITY ANALYSIS (LOCAL) ---',
+    ...(claimResult.claims.length?claimResult.claims.slice(0,4).map(c=>`• ${Math.round(c.claimScore*100)}% specificity: "${c.sentence}"`):['• No sentences scored']),
     '',`INPUT: ${analyzeText.slice(0,250)}...`,'=== END REPORT ==='
   ].filter(l=>l!==undefined).join('\n');
   navigator.clipboard.writeText(lines).then(()=>toast('REPORT COPIED')).catch(()=>toast('CLIPBOARD UNAVAILABLE'));
