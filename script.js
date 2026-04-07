@@ -546,12 +546,23 @@ async function queryWikipedia(text) {
 }
 
 // ══════════════════════════════════════════
-// NEWSDATA.IO — REPLACES GDELT
-// Real live news search, no CORS issues with API key
-// API: https://newsdata.io/api/1/latest?apikey=KEY&q=QUERY
+// LIVE NEWS SEARCH — RSS FEEDS (NO API KEY)
+// Sources: Google News, NDTV, Times of India,
+//          BBC, Reuters — all free public RSS
+// Uses allorigins CORS proxy (same as article fetch)
 // ══════════════════════════════════════════
-async function queryNewsData(text) {
-  setSrc('newsdata','active','QUERYING');
+
+// Free public RSS feeds — CORS-accessible via allorigins proxy
+const RSS_FEEDS = [
+  { name:'Google News',     url:'https://news.google.com/rss/search?q={QUERY}&hl=en-IN&gl=IN&ceid=IN:en' },
+  { name:'NDTV',            url:'https://feeds.feedburner.com/ndtvnews-latest' },
+  { name:'Times of India',  url:'https://timesofindia.indiatimes.com/rssfeedstopstories.cms' },
+  { name:'BBC News',        url:'https://feeds.bbci.co.uk/news/rss.xml' },
+  { name:'Reuters',         url:'https://feeds.reuters.com/reuters/topNews' },
+];
+
+async function queryLiveNews(text) {
+  setSrc('newsdata','active','SEARCHING');
   const signals=[]; let score=0; let articles=[];
 
   const query = buildNewsQuery(text);
@@ -560,35 +571,67 @@ async function queryNewsData(text) {
     return { score:0, signals:[], articles:[] };
   }
 
-  try {
-    const url=`https://newsdata.io/api/1/latest?apikey=${encodeURIComponent(API_KEYS.newsdata)}&q=${encodeURIComponent(query)}&language=en&prioritydomain=top`;
-    const res=await fetch(url,{signal:AbortSignal.timeout(10000)});
+  const queryWords = query.toLowerCase().split(/\s+/).filter(w=>w.length>2);
 
-    if (!res.ok) {
-      const errData=await res.json().catch(()=>null);
-      const errMsg=errData?.results?.message||`HTTP ${res.status}`;
-      throw new Error(errMsg);
-    }
+  // Try Google News RSS first (search-based) then fallback to other feeds
+  const feedsToTry = [
+    { name:'Google News', url:`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en&gl=US&ceid=US:en` },
+    { name:'NDTV',        url:'https://feeds.feedburner.com/ndtvnews-latest' },
+    { name:'Times of India', url:'https://timesofindia.indiatimes.com/rssfeedstopstories.cms' },
+    { name:'BBC News',    url:'https://feeds.bbci.co.uk/news/rss.xml' },
+    { name:'Reuters',     url:'https://feeds.reuters.com/reuters/topNews' },
+  ];
 
-    const data=await res.json();
-    if (data.status!=='success') throw new Error(data.results?.message||'API error');
+  // Fetch all feeds in parallel via allorigins proxy
+  const fetched = await Promise.allSettled(
+    feedsToTry.map(async feed => {
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(feed.url)}`;
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error('proxy error');
+      const data = await res.json();
+      if (!data.contents || data.contents.length < 50) throw new Error('empty');
+      return { name: feed.name, xml: data.contents };
+    })
+  );
 
-    articles=data.results||[];
+  // Parse RSS XML and find matching articles
+  const parser = new DOMParser();
+  const matched = [];
 
-    if (!articles.length) {
-      score+=2;
-      signals.push({ type:'fake', msg:`NewsData.io: Zero articles found for "${query}" in top global outlets — story not in verified news` });
-    } else {
-      score-=Math.min(articles.length*0.35,3);
-      signals.push({ type:'real', msg:`NewsData.io: ${articles.length} real news article(s) found covering this topic` });
-    }
-    setSrc('newsdata',articles.length>0?'ok':'fail',articles.length>0?`${articles.length} ARTICLES`:'0 RESULTS');
-  } catch(e) {
-    const msg=e.message||'Unknown error';
-    signals.push({ type:'neutral', msg:`NewsData.io: ${msg}` });
-    setSrc('newsdata','fail','ERROR');
-    safeHTML('newsdataResults',`<div class="error-msg">⚠ NewsData.io error: ${msg}${e.message?.includes('key')?'<br>Check your API key in ⚙ API KEYS settings.':''}</div>`);
-    return { score:0, signals, articles:[] };
+  fetched.forEach(result => {
+    if (result.status !== 'fulfilled') return;
+    const { name, xml } = result.value;
+    try {
+      const doc = parser.parseFromString(xml, 'application/xml');
+      const items = Array.from(doc.querySelectorAll('item'));
+      items.forEach(item => {
+        const title = item.querySelector('title')?.textContent?.trim() || '';
+        const desc  = item.querySelector('description')?.textContent?.replace(/<[^>]+>/g,'').trim() || '';
+        const link  = item.querySelector('link')?.textContent?.trim() ||
+                      item.querySelector('guid')?.textContent?.trim() || '#';
+        const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+        const combined = (title + ' ' + desc).toLowerCase();
+        // Score how many query words match
+        const matchCount = queryWords.filter(w => combined.includes(w)).length;
+        if (matchCount > 0) {
+          matched.push({ title, desc: desc.slice(0,150), link, source: name, pubDate, matchScore: matchCount });
+        }
+      });
+    } catch {}
+  });
+
+  // Sort by relevance
+  matched.sort((a,b) => b.matchScore - a.matchScore);
+  articles = matched.slice(0, 8);
+
+  if (articles.length === 0) {
+    score += 2;
+    signals.push({ type:'fake', msg:`Live News: Zero matching articles in NDTV, TOI, BBC, Reuters, Google News — story absent from major outlets` });
+    setSrc('newsdata','fail','0 RESULTS');
+  } else {
+    score -= Math.min(articles.length * 0.35, 3);
+    signals.push({ type:'real', msg:`Live News: ${articles.length} article(s) found across NDTV, BBC, Reuters and other outlets covering this topic` });
+    setSrc('newsdata','ok',`${articles.length} FOUND`);
   }
 
   return { score, signals, articles };
@@ -609,63 +652,69 @@ function buildNewsQuery(text) {
 }
 
 // ══════════════════════════════════════════
-// CLAIMBUSTER — uses API key in header
-// Without key: skipped with helpful message
+// SENTENCE CREDIBILITY SCORER (LOCAL — NO API)
+// Replaces ClaimBuster — scores sentences using
+// built-in linguistic analysis patterns.
+// Checks: hedging language, specificity, sourcing,
+// emotional loading, numerical claims, passives.
 // ══════════════════════════════════════════
-async function queryClaimBuster(text) {
-  setSrc('claim','active','SCORING');
+async function queryCredibilityScorer(text) {
+  setSrc('claim','active','ANALYZING');
   const signals=[]; let score=0; let claims=[];
 
-  if (!API_KEYS.claimbuster) {
-    const msg='ClaimBuster: No key set. To enable, paste your free key from idir.uta.edu/claimbuster into the API_KEYS.claimbuster variable in script.js';
-    safeHTML('claimResults',`<div class="nokey-msg">🔑 ClaimBuster not configured. Get a free key at <a href="https://idir.uta.edu/claimbuster/" target="_blank" style="color:var(--cyan)">idir.uta.edu/claimbuster</a> and add it to script.js line 155.</div>`);
-    setSrc('claim','fail','NO KEY');
-    signals.push({ type:'neutral', msg });
-    return { score:0, signals, claims:[] };
-  }
-
-  const sentences=text.replace(/([.!?])\s+(?=[A-Z])/g,'$1\n').split('\n')
-    .map(s=>s.trim()).filter(s=>s.length>25&&s.length<400).slice(0,5);
+  // Split into sentences
+  const sentences = text
+    .replace(/([.!?])\s+(?=[A-Z])/g,'$1\n')
+    .split('\n')
+    .map(s=>s.trim())
+    .filter(s=>s.length>20 && s.length<500)
+    .slice(0,6);
 
   if (!sentences.length) {
     setSrc('claim','','SKIPPED');
     return { score:0, signals:[], claims:[] };
   }
 
-  const settled=await Promise.allSettled(sentences.map(async sentence => {
-    const res=await fetch(
-      `https://idir.uta.edu/claimbuster/api/v2/score/text/${encodeURIComponent(sentence)}`,
-      {
-        method:'GET',
-        headers:{ 'Accept':'application/json', 'x-api-key': API_KEYS.claimbuster },
-        signal:AbortSignal.timeout(8000),
-      }
-    );
-    if (!res.ok) throw new Error('HTTP '+res.status);
-    const data=await res.json();
-    return { sentence, claimScore:data?.results?.[0]?.score??0 };
-  }));
+  // Score each sentence using local heuristics
+  claims = sentences.map(sentence => {
+    const t = sentence.toLowerCase();
+    let s = 0.3; // neutral baseline
 
-  const fulfilled=settled.filter(r=>r.status==='fulfilled');
-  if (fulfilled.length>0) {
-    claims=fulfilled.map(r=>r.value).sort((a,b)=>b.claimScore-a.claimScore);
-    const high=claims.filter(c=>c.claimScore>0.7).length;
-    const avg=claims.reduce((s,c)=>s+c.claimScore,0)/claims.length;
-    if (high>=3) { score+=1.5; signals.push({type:'fake',msg:`ClaimBuster: ${high} sentences scored >70% check-worthy (avg ${(avg*100).toFixed(0)}%)`}); }
-    else if (claims.length>0) signals.push({type:'neutral',msg:`ClaimBuster: ${claims.length} sentences scored — avg check-worthiness: ${(avg*100).toFixed(0)}%`});
-    setSrc('claim','ok',`${claims.length} SCORED`);
-  } else {
-    const failReason=settled[0]?.reason?.message||'Unknown error';
-    const msg=failReason.includes('401')||failReason.includes('403')
-      ? 'ClaimBuster: Invalid API key — check your key in ⚙ settings'
-      : `ClaimBuster: API error — ${failReason}`;
-    signals.push({type:'neutral',msg});
-    setSrc('claim','fail','ERROR');
-    safeHTML('claimResults',`<div class="error-msg">⚠ ${msg}</div>`);
+    // INCREASES credibility score (higher = more check-worthy)
+    if (/\b\d{4}\b/.test(t)) s += 0.15;                                    // year mentioned
+    if (/\b\d+(\.\d+)?%/.test(t)) s += 0.2;                               // percentage
+    if (/\b(billion|million|thousand|crore|lakh)\b/.test(t)) s += 0.15;   // large numbers
+    if (/\b(said|says|confirmed|announced|stated|told|according)\b/.test(t)) s += 0.2; // attribution
+    if (/\b(government|minister|president|court|parliament|police)\b/.test(t)) s += 0.2; // institutions
+    if (/\b(died|killed|arrested|sentenced|convicted|acquitted)\b/.test(t)) s += 0.25; // strong factual
+    if (/\b(study|research|report|survey|data|statistics)\b/.test(t)) s += 0.2; // evidence reference
+    if (/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(t)) s += 0.1; // specific date
+
+    // DECREASES credibility score (less check-worthy / more opinion)
+    if (/\b(allegedly|reportedly|claimed|rumored|sources say)\b/.test(t)) s -= 0.1;
+    if (/\b(everyone|nobody|always|never|all|totally|completely|absolutely)\b/.test(t)) s -= 0.1;
+    if (/\b(i think|i believe|in my opinion|some people|many people)\b/.test(t)) s -= 0.2;
+    if (/[!]{2,}/.test(t)) s -= 0.15;                                     // multiple exclamation marks
+
+    return { sentence, claimScore: Math.max(0, Math.min(1, s)) };
+  });
+
+  claims.sort((a,b) => b.claimScore - a.claimScore);
+
+  const highClaims = claims.filter(c => c.claimScore > 0.65).length;
+  const avgScore = claims.reduce((s,c) => s+c.claimScore, 0) / claims.length;
+
+  if (highClaims >= 3) {
+    score += 1;
+    signals.push({ type:'fake', msg:`Sentence Analysis: ${highClaims} sentences contain strong verifiable claims (avg ${(avgScore*100).toFixed(0)}% specificity) — high factual density, verify sources` });
+  } else if (claims.length > 0) {
+    signals.push({ type:'neutral', msg:`Sentence Analysis: ${claims.length} sentences scored — avg specificity: ${(avgScore*100).toFixed(0)}% (local analysis, no API needed)` });
   }
 
+  setSrc('claim','ok',`${claims.length} SCORED`);
   return { score, signals, claims };
 }
+
 
 // ══════════════════════════════════════════
 // STRUCTURAL ANALYSIS
@@ -820,13 +869,13 @@ async function checkNews() {
   setStep(4);
   const wikiResult=await queryWikipedia(analyzeText);
 
-  // NewsData.io
+  // NewsData / RSS Live News
   setStep(5);
-  const newsdataResult=await queryNewsData(analyzeText);
+  const newsdataResult=await queryLiveNews(analyzeText);
 
-  // ClaimBuster
+  // Sentence Credibility Scorer (local, no API)
   setStep(6);
-  const claimResult=await queryClaimBuster(analyzeText.slice(0,1200));
+  const claimResult=await queryCredibilityScorer(analyzeText.slice(0,1200));
 
   // Compute
   setStep(7);
