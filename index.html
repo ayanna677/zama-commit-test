@@ -31,53 +31,15 @@
         <div class="stat-pill fake-stat"><span class="stat-val" id="hs-fake">0</span><span class="stat-lbl">FAKE</span></div>
         <div class="stat-pill real-stat"><span class="stat-val" id="hs-real">0</span><span class="stat-lbl">REAL</span></div>
       </div>
-      <button class="api-config-btn" onclick="toggleApiConfig()">⚙ API KEYS</button>
     </div>
   </div>
   <div class="header-ticker">
     <span class="ticker-label">● LIVE</span>
-    <div class="ticker-track"><span class="ticker-content" id="ticker">TRUTHSCAN v3.2 ONLINE — NEWSDATA.IO LIVE NEWS SEARCH — WIKIPEDIA REST API — DOMAIN REPUTATION DB 500+ SOURCES — CLAIMBUSTER AI — CLICK ⚙ API KEYS TO CONFIGURE FREE KEYS — PASTE URL OR TEXT TO BEGIN</span></div>
+    <div class="ticker-track"><span class="ticker-content" id="ticker">TRUTHSCAN v3.2 ONLINE — NEWSDATA.IO LIVE NEWS ACTIVE — WIKIPEDIA REST API — DOMAIN REPUTATION DB 500+ SOURCES — CLAIMBUSTER AI AVAILABLE — PASTE URL OR TEXT TO BEGIN FACT VERIFICATION</span></div>
   </div>
 </header>
 
-<!-- API CONFIG PANEL -->
-<div class="api-config-panel" id="apiConfigPanel" style="display:none">
-  <div class="api-config-inner">
-    <div class="api-config-title"><span>⚙ API KEY CONFIGURATION</span><button class="api-close-btn" onclick="toggleApiConfig()">✕ CLOSE</button></div>
-    <div class="api-config-body">
-
-      <div class="api-key-row">
-        <div class="api-key-info">
-          <span class="api-key-name">📡 NEWSDATA.IO <span class="api-badge free">FREE</span></span>
-          <span class="api-key-desc">Replaces GDELT — live news search across 10,000+ global outlets. 200 requests/day free.</span>
-          <a href="https://newsdata.io/register" target="_blank" rel="noopener" class="api-get-link">↗ Get free key at newsdata.io</a>
-        </div>
-        <div class="api-key-input-wrap">
-          <input type="password" id="key-newsdata" placeholder="pub_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" class="api-key-input" oninput="checkKeyInput('newsdata')">
-          <button class="api-save-btn" onclick="saveKey('newsdata')">SAVE</button>
-          <button class="api-clear-btn" onclick="clearKey('newsdata')">✕</button>
-        </div>
-        <div class="api-key-status" id="kstatus-newsdata">NOT SET</div>
-      </div>
-
-      <div class="api-key-row">
-        <div class="api-key-info">
-          <span class="api-key-name">🤖 CLAIMBUSTER AI <span class="api-badge free">FREE</span></span>
-          <span class="api-key-desc">AI sentence claim scoring by UT Arlington. CORS blocks browser without a key. With key: full scoring enabled.</span>
-          <a href="https://idir.uta.edu/claimbuster/" target="_blank" rel="noopener" class="api-get-link">↗ Get free key at idir.uta.edu/claimbuster</a>
-        </div>
-        <div class="api-key-input-wrap">
-          <input type="password" id="key-claimbuster" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" class="api-key-input" oninput="checkKeyInput('claimbuster')">
-          <button class="api-save-btn" onclick="saveKey('claimbuster')">SAVE</button>
-          <button class="api-clear-btn" onclick="clearKey('claimbuster')">✕</button>
-        </div>
-        <div class="api-key-status" id="kstatus-claimbuster">NOT SET</div>
-      </div>
-
-    </div>
-    <div class="api-config-note">🔒 Keys stored in your browser's localStorage only — never transmitted anywhere except the respective APIs.</div>
-  </div>
-</div>
+<!-- API KEYS: NewsData.io key is hardcoded in script.js. ClaimBuster key can be added to script.js line ~155 -->
 
 <!-- SOURCE STATUS BAR -->
 <div class="source-bar">
@@ -85,7 +47,7 @@
   <div class="src-item" id="src-fetch"><span class="src-dot"></span><span class="src-label">ARTICLE FETCH</span><span class="src-status" id="ss-fetch">READY</span></div>
   <div class="src-item" id="src-domain"><span class="src-dot"></span><span class="src-label">DOMAIN DB</span><span class="src-status" id="ss-domain">READY</span></div>
   <div class="src-item" id="src-wiki"><span class="src-dot"></span><span class="src-label">WIKIPEDIA</span><span class="src-status" id="ss-wiki">READY</span></div>
-  <div class="src-item" id="src-newsdata"><span class="src-dot"></span><span class="src-label">NEWSDATA.IO</span><span class="src-status" id="ss-newsdata">NEEDS KEY</span></div>
+  <div class="src-item" id="src-newsdata"><span class="src-dot"></span><span class="src-label">NEWSDATA.IO</span><span class="src-status" id="ss-newsdata">READY</span></div>
   <div class="src-item" id="src-claim"><span class="src-dot"></span><span class="src-label">CLAIMBUSTER AI</span><span class="src-status" id="ss-claim">NEEDS KEY</span></div>
 </div>
 
@@ -165,7 +127,6 @@
         <span>NewsData.io</span><span class="idle-sep">·</span>
         <span>ClaimBuster AI</span>
       </div>
-      <button class="idle-setup-btn" onclick="toggleApiConfig()">⚙ Setup API Keys for Full Power</button>
     </div>
 
     <div class="scanning-state" id="scanState" style="display:none">
