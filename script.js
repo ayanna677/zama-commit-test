@@ -146,9 +146,11 @@ const SESSION = {
 };
 let scanHist = JSON.parse(localStorage.getItem('ts_h') || '[]');
 
-// API Keys — loaded from localStorage
+// API Keys
+// NewsData.io key is hardcoded — no UI button needed
+// ClaimBuster key: get free key at idir.uta.edu/claimbuster and paste below
 const API_KEYS = {
-  newsdata:    localStorage.getItem('ts_key_newsdata')    || '',
+  newsdata:    'pub_3d644b657a84487b945a7d9e07184556',
   claimbuster: localStorage.getItem('ts_key_claimbuster') || '',
 };
 
@@ -171,80 +173,25 @@ document.addEventListener('DOMContentLoaded', () => {
   renderStats();
   renderHistory();
   startClock();
-  initApiKeyUI();
+  updateSourceBarKeyStatus();
 
   const ta = document.getElementById('newsText');
   if (ta) ta.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) checkNews(); });
 });
 
 // ══════════════════════════════════════════
-// API KEY MANAGEMENT
+// API KEY MANAGEMENT (no UI panel — key hardcoded above)
 // ══════════════════════════════════════════
-function initApiKeyUI() {
-  // Pre-fill inputs and update status indicators
-  ['newsdata','claimbuster'].forEach(id => {
-    const inp = document.getElementById(`key-${id}`);
-    if (inp && API_KEYS[id]) {
-      inp.value = API_KEYS[id];
-      setKeyStatus(id, 'SET', true);
-    } else {
-      setKeyStatus(id, 'NOT SET', false);
-    }
-  });
-  updateSourceBarKeyStatus();
-}
-
-function setKeyStatus(id, msg, isSet) {
-  const el = document.getElementById(`kstatus-${id}`);
-  if (!el) return;
-  el.textContent = msg;
-  el.className = `api-key-status ${isSet ? 'set' : 'notset'}`;
-}
-
-function saveKey(id) {
-  const inp = document.getElementById(`key-${id}`);
-  if (!inp) return;
-  const val = inp.value.trim();
-  if (!val) { toast('ENTER A KEY FIRST'); return; }
-  API_KEYS[id] = val;
-  localStorage.setItem(`ts_key_${id}`, val);
-  setKeyStatus(id, 'SAVED ✓', true);
-  updateSourceBarKeyStatus();
-  toast(`${id.toUpperCase()} KEY SAVED`);
-}
-
-function clearKey(id) {
-  const inp = document.getElementById(`key-${id}`);
-  if (inp) inp.value = '';
-  API_KEYS[id] = '';
-  localStorage.removeItem(`ts_key_${id}`);
-  setKeyStatus(id, 'NOT SET', false);
-  updateSourceBarKeyStatus();
-  toast(`${id.toUpperCase()} KEY CLEARED`);
-}
-
-function checkKeyInput(id) {
-  const inp = document.getElementById(`key-${id}`);
-  if (inp && inp.value.trim()) setKeyStatus(id, 'UNSAVED', false);
-}
+function initApiKeyUI() { updateSourceBarKeyStatus(); }
+function setKeyStatus() {}
+function saveKey() {}
+function clearKey() {}
+function checkKeyInput() {}
+function toggleApiConfig() {}
 
 function updateSourceBarKeyStatus() {
-  if (API_KEYS.newsdata) {
-    setSrc('newsdata', 'ok', 'KEY SET');
-  } else {
-    setSrc('newsdata', 'fail', 'NEEDS KEY');
-  }
-  if (API_KEYS.claimbuster) {
-    setSrc('claim', 'ok', 'KEY SET');
-  } else {
-    setSrc('claim', 'fail', 'NEEDS KEY');
-  }
-}
-
-function toggleApiConfig() {
-  const panel = document.getElementById('apiConfigPanel');
-  if (!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  setSrc('newsdata', API_KEYS.newsdata ? 'ok' : 'fail', API_KEYS.newsdata ? 'READY' : 'NO KEY');
+  setSrc('claim',    API_KEYS.claimbuster ? 'ok' : 'fail', API_KEYS.claimbuster ? 'READY' : 'NO KEY');
 }
 
 // ══════════════════════════════════════════
@@ -607,15 +554,6 @@ async function queryNewsData(text) {
   setSrc('newsdata','active','QUERYING');
   const signals=[]; let score=0; let articles=[];
 
-  if (!API_KEYS.newsdata) {
-    const msg='NewsData.io: No API key set — click ⚙ API KEYS button to add your free key from newsdata.io';
-    safeHTML('newsdataResults', `<div class="nokey-msg">🔑 ${msg} <button class="inline-setup-btn" onclick="toggleApiConfig()">Setup Now</button></div>`);
-    setSrc('newsdata','fail','NO KEY');
-    signals.push({ type:'neutral', msg });
-    return { score:0, signals, articles:[] };
-  }
-
-  // Build best query from text
   const query = buildNewsQuery(text);
   if (!query || query.length < 4) {
     setSrc('newsdata','','SKIPPED');
@@ -623,19 +561,17 @@ async function queryNewsData(text) {
   }
 
   try {
-    // NewsData.io latest endpoint — CORS-open with API key
     const url=`https://newsdata.io/api/1/latest?apikey=${encodeURIComponent(API_KEYS.newsdata)}&q=${encodeURIComponent(query)}&language=en&prioritydomain=top`;
     const res=await fetch(url,{signal:AbortSignal.timeout(10000)});
 
     if (!res.ok) {
       const errData=await res.json().catch(()=>null);
       const errMsg=errData?.results?.message||`HTTP ${res.status}`;
-      if (res.status===401||res.status===403) throw new Error('Invalid API key — check your newsdata.io key');
       throw new Error(errMsg);
     }
 
     const data=await res.json();
-    if (data.status!=='success') throw new Error(data.results?.message||'API returned error');
+    if (data.status!=='success') throw new Error(data.results?.message||'API error');
 
     articles=data.results||[];
 
@@ -681,8 +617,8 @@ async function queryClaimBuster(text) {
   const signals=[]; let score=0; let claims=[];
 
   if (!API_KEYS.claimbuster) {
-    const msg='ClaimBuster: No API key set — click ⚙ API KEYS button to add your free key from idir.uta.edu/claimbuster';
-    safeHTML('claimResults',`<div class="nokey-msg">🔑 ${msg} <button class="inline-setup-btn" onclick="toggleApiConfig()">Setup Now</button></div>`);
+    const msg='ClaimBuster: No key set. To enable, paste your free key from idir.uta.edu/claimbuster into the API_KEYS.claimbuster variable in script.js';
+    safeHTML('claimResults',`<div class="nokey-msg">🔑 ClaimBuster not configured. Get a free key at <a href="https://idir.uta.edu/claimbuster/" target="_blank" style="color:var(--cyan)">idir.uta.edu/claimbuster</a> and add it to script.js line 155.</div>`);
     setSrc('claim','fail','NO KEY');
     signals.push({ type:'neutral', msg });
     return { score:0, signals, claims:[] };
